@@ -1,0 +1,32 @@
+name: Run PYDDOS (Safe Localhost Test)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  ddos-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install termcolor colorama
+
+      - name: Start test server
+        run: |
+          python -m http.server 8000 &
+          echo "Test server running on 127.0.0.1:8000"
+
+      - name: Run PYDDOS (Pyslow on localhost)
+        timeout-minutes: 1
+        run: |
+          python pyddos.py -d 127.0.0.1 -p 8000 -T 200 -Pyslow
